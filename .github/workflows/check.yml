@@ -1,0 +1,26 @@
+name: Verify challenge
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v test_app
+      - run: docker build -t restock-test .
+      - name: Verify container startup with required environment only
+        run: |
+          docker run -d --name restock-check -p 8080:8080 -e STOCK_API_URL=http://localhost:3000/api/stock -e STOCK_API_KEY=synthetic -e RESEND_BASE_URL=http://localhost:3000 -e RESEND_API_KEY=synthetic -e WEBHOOK_SECRET=synthetic restock-test
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/health; then
+              docker rm -f restock-check
+              exit 0
+            fi
+            sleep 1
+          done
+          docker rm -f restock-check
+          exit 1
